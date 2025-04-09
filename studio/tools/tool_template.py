@@ -231,7 +231,7 @@ def add_tool_template(
             tool_template = db_model.ToolTemplate(
                 id=tool_uuid,
                 name=request.tool_template_name,
-                python_code_file_name="main.py",
+                python_code_file_name="tool.py",
                 python_requirements_file_name="requirements.txt",
                 source_folder_path=tool_dir,
                 tool_image_path=tool_image_path,

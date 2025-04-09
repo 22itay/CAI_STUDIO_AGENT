@@ -97,7 +97,7 @@ def _create_tool_instance_impl(request: CreateToolInstanceRequest, session: DbSe
             id=instance_uuid,
             workflow_id=request.workflow_id,
             name=tool_instance_name,
-            python_code_file_name="main.py",
+            python_code_file_name="tool.py",
             python_requirements_file_name="requirements.txt",
             source_folder_path=tool_instance_dir,
             tool_image_path="",
