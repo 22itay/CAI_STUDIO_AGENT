@@ -9,7 +9,6 @@ from crewai import Task, Crew, Agent
 from crewai.tools import BaseTool
 from crewai.utilities.events import crewai_event_bus
 
-from studio.tools.utils import get_tool_instance_proxy
 from studio.cross_cutting import utils as cc_utils
 from studio import consts
 
@@ -25,6 +24,7 @@ from engine.crewai.llms import get_crewai_llm_object_direct
 import engine.types as input_types
 from engine.crewai.events import OpsServerMessageQueueEventListener
 from engine.crewai.wrappers import *
+from engine.crewai.tools import get_venv_tool, get_tool_instance_proxy
 
 
 #  Compare two different versions of Cloudera AI Workbench. Workbench
@@ -110,9 +110,10 @@ def create_crewai_objects_for_test(
 
     tools: Dict[str, BaseTool] = {}
     for t_ in collated_input.tool_instances:
-        tools[t_.id] = get_tool_instance_proxy(t_, tool_user_params.get(t_.id, {}))
-        print(tools[t_.id])
-        print(type(tools[t_.id]))
+        if t_.is_venv_tool:
+            tools[t_.id] = get_venv_tool(t_, tool_user_params.get(t_.id, {}))
+        else:
+            tools[t_.id] = get_tool_instance_proxy(t_, tool_user_params.get(t_.id, {}))
 
     agents: Dict[str, AgentStudioCrewAIAgent] = {}
     for agent in collated_input.agents:

@@ -4,54 +4,66 @@ from typing import Type
 from pydantic import BaseModel, Field
 from pydantic import BaseModel as StudioBaseTool
 from textwrap import dedent
+import argparse
 
 class UserParameters(BaseModel):
     serper_api_key: str
 
+class ToolParameters(BaseModel):
+    query: str = Field(description="The search query to find relevant results")
+    
+    
+OUTPUT_KEY="tool_output"
 
-class SearchInternetTool(StudioBaseTool):
-    class ToolParameters(BaseModel):
-        query: str = Field(description="The search query to find relevant results")
 
-    name: str = "Search Internet Tool"
-    description: str = dedent(
-        """
-        Useful to search the internet about a given topic and return relevant results.
-        """
-    )
-    args_schema: Type[BaseModel] = ToolParameters
-    user_parameters: UserParameters
+def run_tool(user_parameters: UserParameters, query: str) -> list[dict]:
+    top_result_to_return = 3
+    url = "https://google.serper.dev/search"
 
-    def _run(self, query: str) -> str:
-        top_result_to_return = 3
-        url = "https://google.serper.dev/search"
+    # Prepare request payload and headers
+    payload = json.dumps({"q": query})
+    headers = {
+        'X-API-KEY': user_parameters.serper_api_key,
+        'content-type': 'application/json'
+    }
 
-        # Prepare request payload and headers
-        payload = json.dumps({"q": query})
-        headers = {
-            'X-API-KEY': self.user_parameters.serper_api_key,
-            'content-type': 'application/json'
-        }
+    # Make the POST request
+    response = requests.request("POST", url, headers=headers, data=payload)
 
-        # Make the POST request
-        response = requests.request("POST", url, headers=headers, data=payload)
+    # Check if 'organic' key exists in the response
+    if 'organic' not in response.json():
+        return "Sorry, I couldn't find anything about that. There might be an issue with your Serper API key."
 
-        # Check if 'organic' key exists in the response
-        if 'organic' not in response.json():
-            return "Sorry, I couldn't find anything about that. There might be an issue with your Serper API key."
+    # Extract and format results
+    results = response.json().get('organic', [])
+    formatted_results = []
+    for result in results[:top_result_to_return]:
+        
+        try:
+            formatted_results.append({
+                "title": result['title'],
+                "link": result['link'],
+                "snippet": result['snippet']
+            })
+        except KeyError:
+            continue  # Skip if any key is missing
 
-        # Extract and format results
-        results = response.json().get('organic', [])
-        formatted_results = []
-        for result in results[:top_result_to_return]:
-            try:
-                formatted_results.append('\n'.join([
-                    f"Title: {result['title']}",
-                    f"Link: {result['link']}",
-                    f"Snippet: {result['snippet']}",
-                    "\n-----------------"
-                ]))
-            except KeyError:
-                continue  # Skip if any key is missing
+    return formatted_results
 
-        return '\n'.join(formatted_results)
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--user-params", required=True, help="JSON string for tool configuration")
+    parser.add_argument("--tool-params", required=True, help="JSON string for tool arguments")
+    args = parser.parse_args()
+    
+    # Parse JSON into dictionaries
+    config_dict = json.loads(args.user_params)
+    params_dict = json.loads(args.tool_params)
+    
+    # Validate dictionaries against Pydantic models
+    config = UserParameters(**config_dict)
+    params = ToolParameters(**params_dict)
+
+    output = run_tool(config, params.query)
+    print(OUTPUT_KEY, output)

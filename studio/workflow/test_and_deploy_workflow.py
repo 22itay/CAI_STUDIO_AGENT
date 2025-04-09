@@ -132,6 +132,7 @@ def _create_collated_input(
                         if tool_instance_db_model.tool_image_path
                         else None
                     ),
+                    is_venv_tool=tool_instance_db_model.is_venv_tool,
                 )
             )
 
@@ -445,7 +446,7 @@ def deploy_workflow(
             elif os.path.basename(src) == "workflows":
                 return {name for name in names if name != os.path.basename(workflow_directory)}
             else:
-                return {".venv", ".next", "node_modules", ".nvm"}
+                return {".venv", ".next", "node_modules", ".nvm", ".requirements_hash.txt"}
 
         shutil.copytree(
             "studio-data", os.path.join(deployable_workflow_dir, "studio-data"), ignore=studio_data_workflow_ignore

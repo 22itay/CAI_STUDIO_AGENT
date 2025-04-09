@@ -9,7 +9,7 @@ from crewai.utilities.events import crewai_event_bus
 
 import engine.types as input_types
 from engine.crewai.llms import get_crewai_llm_object_direct
-from engine.crewai.tools import get_embedded_crewai_tool
+from engine.crewai.tools import get_embedded_crewai_tool, get_venv_tool
 from engine.crewai.agents import get_crewai_agent
 from engine.crewai.events import OpsServerMessageQueueEventListener
 from engine.crewai.wrappers import *
@@ -26,7 +26,10 @@ def create_crewai_objects(
 
     tools: Dict[str, BaseTool] = {}
     for t_ in collated_input.tool_instances:
-        tools[t_.id] = get_embedded_crewai_tool(t_, tool_user_params.get(t_.id, {}))
+        if t_.is_venv_tool:
+            tools[t_.id] = get_venv_tool(t_, tool_user_params.get(t_.id, {}))
+        else:
+            tools[t_.id] = get_embedded_crewai_tool(t_, tool_user_params.get(t_.id, {}))
 
     agents: Dict[str, AgentStudioCrewAIAgent] = {}
     for agent in collated_input.agents:

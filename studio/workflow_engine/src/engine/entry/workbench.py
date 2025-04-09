@@ -28,6 +28,7 @@ import engine.types as input_types
 from engine import consts
 from engine.crewai.run import run_workflow_async
 from engine.crewai.tracing import instrument_crewai_workflow, reset_crewai_instrumentation
+from engine.crewai.tools import prepare_virtual_env_for_tool
 
 import cml.models_v1 as cml_models
 
@@ -37,9 +38,13 @@ import cml.models_v1 as cml_models
 def _install_python_requirements(collated_input: input_types.CollatedInput):
     requirement_files = set()
     for tool_instance in collated_input.tool_instances:
-        requirement_files.add(
-            os.path.join(tool_instance.source_folder_path, tool_instance.python_requirements_file_name)
-        )
+        if tool_instance.is_venv_tool:
+            print("INSTALLING NEW VENV TOOL INSTANCE")
+            prepare_virtual_env_for_tool(tool_instance.source_folder_path, tool_instance.python_requirements_file_name)
+        else:
+            requirement_files.add(
+                os.path.join(tool_instance.source_folder_path, tool_instance.python_requirements_file_name)
+            )
     for requirement_file in requirement_files:
         subprocess.call(["pip", "install", "-r", requirement_file])
 
