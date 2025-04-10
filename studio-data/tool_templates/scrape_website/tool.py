@@ -14,10 +14,12 @@ class UserParameters(BaseModel):
 class ToolParameters(BaseModel):
     website: str = Field(description="The website URL to search or fetch data from")
 
-OUTPUT_KEY="tool_output"
-
-
-def run_tool(website: str) -> str:
+def run_tool(
+    config: UserParameters,
+    args: ToolParameters,
+):
+    website = args.website
+    
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
                     '(KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36'
@@ -41,6 +43,9 @@ def run_tool(website: str) -> str:
     
     
 
+OUTPUT_KEY="tool_output"
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--user-params", required=True, help="JSON string for tool configuration")
@@ -55,5 +60,8 @@ if __name__ == "__main__":
     config = UserParameters(**config_dict)
     params = ToolParameters(**params_dict)
 
-    output = {"result": run_tool(params.website)}
+    output = run_tool(
+        config,
+        params
+    )
     print(OUTPUT_KEY, output)

@@ -25,7 +25,7 @@ class ToolParameters(BaseModel):
     op: Literal["+", "-", "*", "/"] = Field(description="operator")
 
 
-def run_tool(params: UserParameters, args: ToolParameters):
+def run_tool(config: UserParameters, args: ToolParameters):
     """
     Main tool code logic. Anything returned from this method is returned
     from the tool back to the calling agent.
@@ -55,7 +55,7 @@ if __name__ == "__main__":
     config = UserParameters(**config_dict)
     params = ToolParameters(**params_dict)
 
-    output = {"result": run_calc(params.a, params.b, params.op)}
+    output = run_tool(config, params)
     print(OUTPUT_KEY, output)
 
 

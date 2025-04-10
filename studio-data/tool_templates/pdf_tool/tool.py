@@ -21,10 +21,18 @@ class ToolParameters(BaseModel):
     base_url: Optional[str] = Field(description="Base URL for relative content paths (e.g., images, CSS files). Defaults to the current working directory.", default=None)
     extras: Optional[List[str]] = Field(description="Optional Markdown extensions for advanced features like tables, footnotes, etc., in 'markdown_to_pdf'.",  default=[])
 
-OUTPUT_KEY="tool_output"
-
-
-def run_tool(action: str, pdf: str, raw: Optional[str] = None, md: Optional[str] = None, css: Optional[str] = None, base_url: Optional[str] = None, extras: Optional[List[str]] = None) -> str:
+def run_tool(
+    config: UserParameters,
+    args: ToolParameters,
+):
+    action = args.action
+    pdf = args.pdf 
+    raw = args.raw 
+    md = args.md 
+    css = args.css 
+    base_url = args.base_url 
+    extras = args.extras 
+    
     try:
         if action == "readpdf":
             # Validate the input PDF file path
@@ -87,6 +95,11 @@ def run_tool(action: str, pdf: str, raw: Optional[str] = None, md: Optional[str]
     except Exception as e:
         return f"Unexpected error: {e}"
     
+    
+OUTPUT_KEY="tool_output"
+
+
+    
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--user-params", required=True, help="JSON string for tool configuration")
@@ -101,13 +114,8 @@ if __name__ == "__main__":
     config = UserParameters(**config_dict)
     params = ToolParameters(**params_dict)
 
-    output = {"result": run_tool(
-        params.action,
-        params.pdf,
-        params.raw,
-        params.md,
-        params.css,
-        params.base_url,
-        params.extras
-    )}
+    output = run_tool(
+        config,
+        params
+    )
     print(OUTPUT_KEY, output)

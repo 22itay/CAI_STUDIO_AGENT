@@ -7,21 +7,17 @@ import json
 import argparse
 
 class UserParameters(BaseModel):
-    """
-    Args:
-        directory (Optional[str]): The directory for listing the files (optional).
-    """
-    directory: Optional[str] = None
+    pass
     
 class ToolParameters(BaseModel):
     directory: Optional[str] = Field(None, description="The directory path for file listing.")
 
-OUTPUT_KEY="tool_output"
-
-
-def run_tool(user_parameters: UserParameters, directory: Optional[str] = None) -> str:
+def run_tool(
+    config: UserParameters,
+    args: ToolParameters,
+):
     # Use function argument if provided, else fallback to user parameter
-    directory = user_parameters.directory if user_parameters.directory else directory
+    directory = args.directory
 
     if not directory:
         return "Error: No directory provided."
@@ -44,6 +40,9 @@ def run_tool(user_parameters: UserParameters, directory: Optional[str] = None) -
     return f"File paths in {directory}:\n- {files}"
 
 
+OUTPUT_KEY="tool_output"
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--user-params", required=True, help="JSON string for tool configuration")
@@ -58,8 +57,8 @@ if __name__ == "__main__":
     config = UserParameters(**config_dict)
     params = ToolParameters(**params_dict)
 
-    output = {"result": run_tool(
+    output = run_tool(
         config,
-        params.directory
-    )}
+        params
+    )
     print(OUTPUT_KEY, output)

@@ -13,17 +13,20 @@ class ToolParameters(BaseModel):
     query: str = Field(description="The search query to find relevant results")
     
     
-OUTPUT_KEY="tool_output"
 
-
-def run_tool(user_parameters: UserParameters, query: str) -> list[dict]:
+def run_tool(
+    config: UserParameters,
+    args: ToolParameters,
+):
+    query = args.query
+    
     top_result_to_return = 3
     url = "https://google.serper.dev/search"
 
     # Prepare request payload and headers
     payload = json.dumps({"q": query})
     headers = {
-        'X-API-KEY': user_parameters.serper_api_key,
+        'X-API-KEY': config.serper_api_key,
         'content-type': 'application/json'
     }
 
@@ -50,6 +53,8 @@ def run_tool(user_parameters: UserParameters, query: str) -> list[dict]:
 
     return formatted_results
 
+OUTPUT_KEY="tool_output"
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -65,5 +70,8 @@ if __name__ == "__main__":
     config = UserParameters(**config_dict)
     params = ToolParameters(**params_dict)
 
-    output = run_tool(config, params.query)
+    output = run_tool(
+        config,
+        params
+    )
     print(OUTPUT_KEY, output)

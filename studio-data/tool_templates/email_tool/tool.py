@@ -35,21 +35,19 @@ class ToolParameters(BaseModel):
     bcc: List[str] = Field(description="List of BCC email addresses, empty list is acceptable if there are no bcc email addresses specified")
     attachments: List[str] = Field(description="List of file paths to attach, empty list is acceptable if there are no files to attach")
 
-
-OUTPUT_KEY="tool_output"
-
-
 def run_tool(
-    user_parameters: UserParameters,
-    action: Literal["sendMail"],
-    sender_email: str,
-    recipients: List[str],
-    subject: str,
-    body: str,
-    cc: List[str],
-    bcc: List[str],
-    attachments: List[str]
-) -> str:
+    config: UserParameters,
+    args: ToolParameters,
+):
+    action = args.action
+    sender_email = args.sender_email
+    recipients = args.recipients
+    subject = args.subject
+    body = args.body
+    cc = args.cc
+    bcc = args.bcc
+    attachments = args.attachments
+    
     """
     Sends an email using the specified SMTP server.
     """
@@ -92,12 +90,12 @@ def run_tool(
                 all_recipients.extend(bcc)
 
             # Connect to the SMTP server
-            with smtplib.SMTP(user_parameters.smtp_server, int(user_parameters.smtp_port)) as server:
+            with smtplib.SMTP(config.smtp_server, int(config.smtp_port)) as server:
                 server.starttls()  # Enable encryption (STARTTLS)
 
                 # Authenticate if an SMTP password is provided
-                if user_parameters.smtp_password:
-                    server.login(sender_email, user_parameters.smtp_password)
+                if config.smtp_password:
+                    server.login(sender_email, config.smtp_password)
 
                 # Send the email
                 server.sendmail(sender_email, all_recipients, message.as_string())
@@ -109,6 +107,9 @@ def run_tool(
         return f"Failed to send email: {e}"
     
     
+OUTPUT_KEY="tool_output"
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--user-params", required=True, help="JSON string for tool configuration")
@@ -123,15 +124,8 @@ if __name__ == "__main__":
     config = UserParameters(**config_dict)
     params = ToolParameters(**params_dict)
 
-    output = {"result": run_tool(
+    output = run_tool(
         config,
-        params.action,
-        params.sender_email,
-        params.recipients,
-        params.subject,
-        params.body,
-        params.cc,
-        params.bcc,
-        params.attachments
-    )}
+        params
+    )
     print(OUTPUT_KEY, output)

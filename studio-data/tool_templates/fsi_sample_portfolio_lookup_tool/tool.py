@@ -14,10 +14,12 @@ class UserParameters(BaseModel):
 class ToolParameters(BaseModel):
     customer_id: str = Field(description="Customer ID - The unique identifier for the customer")
 
-OUTPUT_KEY="tool_output"
-
-
-def run_tool(customer_id) -> dict:
+def run_tool(
+    config: UserParameters,
+    args: ToolParameters,
+):
+    customer_id = args.customer_id
+    
     # Placeholder for actual portfolio data retrieval
     portfolio_data = {
         "portfolio_makeup": {
@@ -27,6 +29,9 @@ def run_tool(customer_id) -> dict:
         "total_value": 100000
     }
     return portfolio_data
+
+
+OUTPUT_KEY="tool_output"
 
 
 if __name__ == "__main__":
@@ -43,5 +48,8 @@ if __name__ == "__main__":
     config = UserParameters(**config_dict)
     params = ToolParameters(**params_dict)
 
-    output = run_tool(params.customer_id)
+    output = run_tool(
+        config,
+        params
+    )
     print(OUTPUT_KEY, output)

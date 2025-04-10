@@ -24,11 +24,12 @@ class ToolParameters(BaseModel):
     file_path: str = Field(description="Path to the file to be read and processed.")
 
 
-OUTPUT_KEY="tool_output"
-
-
-
-def run_tool(file_path: str) -> str:
+def run_tool(
+    config: UserParameters,
+    args: ToolParameters,
+):
+    file_path = args.file_path
+    
     """Reads and extracts content from the given file."""
     if not os.path.exists(file_path):
         return f"Error: File not found at path {file_path}"
@@ -128,6 +129,12 @@ def extract_text_from_zip(file_path: str) -> str:
         return content.strip() or "No text-based files found in ZIP."
     
     
+    
+OUTPUT_KEY="tool_output"
+
+
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--user-params", required=True, help="JSON string for tool configuration")
@@ -142,5 +149,8 @@ if __name__ == "__main__":
     config = UserParameters(**config_dict)
     params = ToolParameters(**params_dict)
 
-    output = {"result": run_tool(params.file_path)}
+    output = run_tool(
+        config,
+        params
+    )
     print(OUTPUT_KEY, output)

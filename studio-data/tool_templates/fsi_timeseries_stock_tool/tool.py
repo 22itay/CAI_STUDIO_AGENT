@@ -15,11 +15,13 @@ class UserParameters(BaseModel):
 class ToolParameters(BaseModel):
     tickers_list: List[str] = Field(description="List of stock tickers to pull from the web")
 
-OUTPUT_KEY="tool_output"
 
-
-
-def run_tool(tickers_list: List[str]) -> dict:
+def run_tool(
+    config: UserParameters,
+    args: ToolParameters,
+):
+    tickers_list = args.tickers_list
+    
     all_time_series = {}
     all_time_series_status = {}
     # Get stock data for each ticker
@@ -47,6 +49,9 @@ def run_tool(tickers_list: List[str]) -> dict:
     return  all_time_series_status
 
 
+OUTPUT_KEY="tool_output"
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--user-params", required=True, help="JSON string for tool configuration")
@@ -61,5 +66,8 @@ if __name__ == "__main__":
     config = UserParameters(**config_dict)
     params = ToolParameters(**params_dict)
 
-    output = {"result": run_tool(params.tickers_list)}
+    output = run_tool(
+        config,
+        params
+    )
     print(OUTPUT_KEY, output)

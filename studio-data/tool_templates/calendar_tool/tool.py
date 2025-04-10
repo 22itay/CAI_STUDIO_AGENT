@@ -32,11 +32,14 @@ class ToolParameters(BaseModel):
     event_id: Optional[str] = Field(description="Unique identifier of the event. Required for 'update' and 'delete' actions. If not provided during 'create', a UUID will be generated.")
 
 
-OUTPUT_KEY="tool_output"
 
-
-def run_tool(action: str, calendar_path: str, event_data: Optional[Dict[str, Any]] = None, event_id: Optional[str] = None) -> str:
+def run_tool(config: UserParameters, args: ToolParameters) -> Any:
     try:
+        action = args.action
+        calendar_path = args.calendar_path
+        event_data = args.event_data
+        event_id = args.event_id
+        
         # Ensure the directory for storing the .ics file exists
         artifacts_dir = "studio/artifacts"
         if not os.path.exists(artifacts_dir):
@@ -163,6 +166,9 @@ def run_tool(action: str, calendar_path: str, event_data: Optional[Dict[str, Any
         return f"Failed to perform {action} action: {str(e)}"
 
 
+OUTPUT_KEY="tool_output"
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--user-params", required=True, help="JSON string for tool configuration")
@@ -177,11 +183,6 @@ if __name__ == "__main__":
     config = UserParameters(**config_dict)
     params = ToolParameters(**params_dict)
 
-    output = {"result": run_tool(
-        params.action,
-        params.calendar_path,
-        params.event_data,
-        params.event_id
-    )}
+    output = run_tool(config, params)
     print(OUTPUT_KEY, output)
 

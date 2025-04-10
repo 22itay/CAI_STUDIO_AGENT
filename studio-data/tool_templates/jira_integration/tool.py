@@ -21,23 +21,22 @@ class ToolParameters(BaseModel):
     issue_id: Optional[str] = Field(description="ID of the issue to update or delete, required for 'update' and 'delete' actions.")
     update_data: Optional[Dict] = Field(description="Data for updating a Jira issue in the format: {'fields': {'summary': 'new summary', 'description': 'updated description'}}")
 
-OUTPUT_KEY="tool_output"
-
-
 def run_tool(
-    user_parameters: UserParameters,
-    action_type: Literal["search", "create", "update", "delete"],
-    query_params: Optional[str] = None,
-    issue_data: Optional[Dict] = None,
-    issue_id: Optional[str] = None,
-    update_data: Optional[Dict] = None
-) -> str:
+    config: UserParameters,
+    args: ToolParameters,
+):
+    action_type = args.action_type
+    query_params = args.query_params
+    issue_data = args.issue_data
+    issue_id = args.issue_id
+    update_data = args.update_data
+
     """
     Jira Integration Tool: Executes specified actions on Jira such as searching, creating, updating, and deleting issues.
     """
     try:
         # Initialize Jira client
-        jira_client = JIRA(server=user_parameters.jira_url, basic_auth=(user_parameters.user_email, user_parameters.auth_token))
+        jira_client = JIRA(server=config.jira_url, basic_auth=(config.user_email, config.auth_token))
 
         if action_type == "search":
             if query_params:
@@ -71,6 +70,10 @@ def run_tool(
         return f"Failed to perform {action_type} action: {str(e)}"
 
 
+OUTPUT_KEY="tool_output"
+
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--user-params", required=True, help="JSON string for tool configuration")
@@ -85,12 +88,8 @@ if __name__ == "__main__":
     config = UserParameters(**config_dict)
     params = ToolParameters(**params_dict)
 
-    output = {"result": run_tool(
+    output = run_tool(
         config,
-        params.action_type,
-        params.query_params,
-        params.issue_data,
-        params.issue_id,
-        params.update_data
-    )}
+        params
+    )
     print(OUTPUT_KEY, output)

@@ -29,17 +29,16 @@ class ToolParameters(BaseModel):
         default=None
     )
 
-    
-OUTPUT_KEY="tool_output"
-
 
 def run_tool(
-    user_parameters: UserParameters,
-    action_type: Literal["sendMessage"],
-    recipient: str,
-    message: Optional[str] = None,
-    file_paths: Optional[List[str]] = None
-) -> str:
+    config: UserParameters,
+    args: ToolParameters,
+):
+    action_type = args.action_type
+    recipient = args.recipient
+    message = args.message
+    file_paths = args.file_paths
+    
     """
     Action to send a message and/or files to the specified Slack recipient.
 
@@ -51,7 +50,7 @@ def run_tool(
     Returns:
     str: A confirmation message.
     """
-    client = WebClient(token=user_parameters.slack_api_token)
+    client = WebClient(token=config.slack_api_token)
 
     try:
         if action_type=="sendMessage":
@@ -130,6 +129,9 @@ def run_tool(
         error_message = e.response.get('error', 'unknown_error')
         return f"Slack API error: {error_message}. Please check the recipient format, file paths, or permissions."
 
+    
+OUTPUT_KEY="tool_output"
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -145,11 +147,8 @@ if __name__ == "__main__":
     config = UserParameters(**config_dict)
     params = ToolParameters(**params_dict)
 
-    output = {"result": run_tool(
+    output = run_tool(
         config,
-        params.action_type,
-        params.recipient,
-        params.message,
-        params.file_paths
-    )}
+        params
+    )
     print(OUTPUT_KEY, output)

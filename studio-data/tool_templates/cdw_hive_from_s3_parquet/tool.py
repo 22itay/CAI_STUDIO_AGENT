@@ -40,15 +40,16 @@ class ToolParameters(BaseModel):
         description="The path which contains the parquet table files"
     )
 
-OUTPUT_KEY="tool_output"
-
 def run_tool(
-    user_parameters: UserParameters, table_name, s3_path
-) -> str:
+    config: UserParameters,
+    args: ToolParameters,
+):
+    table_name = args.table_name
+    s3_path = args.s3_path
     
-    os.environ["WORKLOAD_PASSWORD"] = user_parameters.workload_pass
-    os.environ["HADOOP_USER_NAME"] = user_parameters.workload_user
-    conn = cmldata.get_connection(user_parameters.hive_cai_data_connection_name)
+    os.environ["WORKLOAD_PASSWORD"] = config.workload_pass
+    os.environ["HADOOP_USER_NAME"] = config.workload_user
+    conn = cmldata.get_connection(config.hive_cai_data_connection_name)
 
     parquet_path = s3_path
     schema_0_path = parquet_path+'/0.parquet'
@@ -74,6 +75,8 @@ def run_tool(
     return "Table Creation Successful: %s" % table_name
 
 
+OUTPUT_KEY="tool_output"
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--user-params", required=True, help="JSON string for tool configuration")
@@ -88,9 +91,8 @@ if __name__ == "__main__":
     config = UserParameters(**config_dict)
     params = ToolParameters(**params_dict)
 
-    output = {"result": run_tool(
+    output = run_tool(
         config,
-        params.table_name,
-        params.s3_path
-    )}
+        params
+    )
     print(OUTPUT_KEY, output)

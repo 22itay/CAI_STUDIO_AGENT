@@ -27,16 +27,14 @@ class ToolParameters(BaseModel):
 OUTPUT_KEY="tool_output"
   
 
-def run_tool(
-    user_parameters: UserParameters,
-    hf_dataset: str,
-    s3_bucket: str,
-    s3_path: str,
-) -> str:
+def run_tool(config: UserParameters, args: ToolParameters) -> str:
+    hf_dataset = args.hf_dataset
+    s3_bucket = args.s3_bucket
+    s3_path = args.s3_path
     
-    os.environ["CDP_ACCESS_KEY_ID"] = user_parameters.CDP_ACCESS_KEY_ID
-    os.environ["CDP_PRIVATE_KEY"] = user_parameters.CDP_PRIVATE_KEY
-    os.environ["WORKLOAD_PASSWORD"] = user_parameters.workload_pass
+    os.environ["CDP_ACCESS_KEY_ID"] = config.CDP_ACCESS_KEY_ID
+    os.environ["CDP_PRIVATE_KEY"] = config.CDP_PRIVATE_KEY
+    os.environ["WORKLOAD_PASSWORD"] = config.workload_pass
     
     flow_version_crn="crn:cdp:df:us-west-1:altus:readyFlow:HuggingFace-to-S3/ADLS/v.1"
     
@@ -81,14 +79,14 @@ def run_tool(
 }}
 ]
 """
-    readyflow_paramaters_json = readyflow_paramaters_json_tmpl.format(workload_user=user_parameters.workload_user, workload_pass=user_parameters.workload_pass, hf_dataset=hf_dataset, s3_path=s3_path, s3_bucket=s3_bucket)
+    readyflow_paramaters_json = readyflow_paramaters_json_tmpl.format(workload_user=config.workload_user, workload_pass=config.workload_pass, hf_dataset=hf_dataset, s3_path=s3_path, s3_bucket=s3_bucket)
     print(readyflow_paramaters_json)
     readyflow_params_path = "/tmp/readyflow_%s_params.json" % uid
     with open(readyflow_params_path, "w") as text_file:
         text_file.write(readyflow_paramaters_json )
 
     create_run_readyflow_cmd = ["cdp", "df", "create-deployment"]
-    create_run_readyflow_cmd.extend(["--service-crn", user_parameters.service_crn])
+    create_run_readyflow_cmd.extend(["--service-crn", config.service_crn])
     create_run_readyflow_cmd.extend(["--flow-version-crn", flow_version_crn])
     create_run_readyflow_cmd.extend(["--deployment-name", deployment_name])
     create_run_readyflow_cmd.extend(["--cfm-nifi-version", "1.27.0.2.3.15.0-8"])
@@ -145,11 +143,6 @@ if __name__ == "__main__":
     config = UserParameters(**config_dict)
     params = ToolParameters(**params_dict)
 
-    output = {"result": run_tool(
-        config,
-        params.hf_dataset,
-        params.s3_bucket,
-        params.s3_path
-    )}
+    output = run_tool(config,params)
     print(OUTPUT_KEY, output)
 

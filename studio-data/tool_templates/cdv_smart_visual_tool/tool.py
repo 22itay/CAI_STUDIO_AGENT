@@ -12,20 +12,18 @@ class UserParameters(BaseModel):
     cdv_base_url: str
     cml_apiv2_app_key: str
 
+
 class ToolParameters(BaseModel):
     dataset_id: str = Field(description="The ID of the dataset to be used for creating the visual")
     columns: List[Dict[str, str]] = Field(description="Columns to be used while creating the visual. It is mandatory to provide at least one column. This parameter cannot be an empty list.")
     title: str = Field(description="Title for the new visual to be created")
 
-OUTPUT_KEY="tool_output"
-  
+
 
 def run_tool(
-    user_parameters: UserParameters,
-    dataset_id: str,
-    columns: List[Dict[str, str]],
-    title: str,
-) -> str:
+    config: UserParameters,
+    args: ToolParameters,
+):
     """
     This function creates a visual in CDV(Cloudera Data Visualization) from a dataset.
     Visual means an actual visualization like a table, chart, etc.
@@ -36,6 +34,9 @@ def run_tool(
 
     The function returns the ID & url of the created visual.
     """
+    dataset_id = args.dataset_id
+    columns = args.columns
+    title = args.title
 
     class ColumnObj(BaseModel):
         column_name: str
@@ -58,11 +59,11 @@ def run_tool(
     request_headers = {
         "accept": "application/json",
         "Content-Type": "application/x-www-form-urlencoded",
-        "Authorization": f"bearer {user_parameters.cml_apiv2_app_key}",
+        "Authorization": f"bearer {config.cml_apiv2_app_key}",
     }
 
     login_path = "arc/apps"
-    login_url = urljoin(user_parameters.cdv_base_url, login_path)
+    login_url = urljoin(config.cdv_base_url, login_path)
     session = requests.Session()
     login_response = session.get(login_url, headers=request_headers)
     if login_response.status_code != 200:
@@ -70,7 +71,7 @@ def run_tool(
 
 
     relative_path = "arc/adminapi/v1/visuals/smart"
-    url = urljoin(user_parameters.cdv_base_url, relative_path)
+    url = urljoin(config.cdv_base_url, relative_path)
 
     payload = {
         'dataset_id': dataset_id,
@@ -84,12 +85,14 @@ def run_tool(
     return_val: dict = response.json()
     return_val.update({
         "visual_id": return_val["id"],
-        "url": urljoin(user_parameters.cdv_base_url, f"arc/apps/app/{return_val['id']}"),
+        "url": urljoin(config.cdv_base_url, f"arc/apps/app/{return_val['id']}"),
     })
     return return_val
 
 
-
+OUTPUT_KEY="tool_output"
+  
+  
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--user-params", required=True, help="JSON string for tool configuration")
@@ -104,11 +107,9 @@ if __name__ == "__main__":
     config = UserParameters(**config_dict)
     params = ToolParameters(**params_dict)
 
-    output = {"result": run_tool(
+    output = run_tool(
         config,
-        params.dataset_id,
-        params.columns,
-        params.title
-    )}
+        params
+    )
     print(OUTPUT_KEY, output)
 

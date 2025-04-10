@@ -19,37 +19,14 @@ class ToolParameters(BaseModel):
     amount: int = Field(description="The total amount of the portfolio, in integer value")
 
 
-OUTPUT_KEY="tool_output"
+def run_tool(
+    config: UserParameters,
+    args: ToolParameters,
+):
+    max_drawdown = args.max_drawdown
+    stocks_ticker = args.stocks_ticker 
+    amount = args.amount
 
-
-
-def mpt(ts: pd.DataFrame) -> np.ndarray:
-    # Use expectation variance to derive the weights of the portfolio
-    expected_returns = ts.pct_change().mean()
-    cov_matrix = ts.pct_change().cov()
-
-    # Define the function to minimize (negative Sharpe Ratio)
-    def neg_sharpe_ratio(weights):
-        portfolio_return = np.sum(weights * expected_returns) * 252
-        portfolio_std_dev = np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights))) * np.sqrt(252)
-        sharpe_ratio = portfolio_return / portfolio_std_dev
-        return -sharpe_ratio
-
-    # Define the constraints
-    n = ts.shape[1]
-    weights_init = np.array([1.0 / n] * n)
-    constraints = ({'type': 'eq', 'fun': lambda x: np.sum(x) - 1})
-    bounds = tuple((0, 1) for x in range(n))
-
-    # Minimize the negative Sharpe Ratio
-    result = minimize(neg_sharpe_ratio, weights_init, method='SLSQP', bounds=bounds, constraints=constraints)
-
-    # Get the optimized weights
-    optimized_weights = result.x
-
-    return optimized_weights
-
-def run_tool(max_drawdown: float, stocks_ticker: list[str], amount: int = 100000) -> dict:
     time_series = pd.read_csv('/tmp/ts.csv')
     time_series = time_series.loc[:,~time_series.columns.str.contains('^Unnamed')]
     time_series = time_series.astype('int64') 
@@ -84,6 +61,38 @@ def run_tool(max_drawdown: float, stocks_ticker: list[str], amount: int = 100000
     return optimized_portfolio
 
 
+def mpt(ts: pd.DataFrame) -> np.ndarray:
+    # Use expectation variance to derive the weights of the portfolio
+    expected_returns = ts.pct_change().mean()
+    cov_matrix = ts.pct_change().cov()
+
+    # Define the function to minimize (negative Sharpe Ratio)
+    def neg_sharpe_ratio(weights):
+        portfolio_return = np.sum(weights * expected_returns) * 252
+        portfolio_std_dev = np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights))) * np.sqrt(252)
+        sharpe_ratio = portfolio_return / portfolio_std_dev
+        return -sharpe_ratio
+
+    # Define the constraints
+    n = ts.shape[1]
+    weights_init = np.array([1.0 / n] * n)
+    constraints = ({'type': 'eq', 'fun': lambda x: np.sum(x) - 1})
+    bounds = tuple((0, 1) for x in range(n))
+
+    # Minimize the negative Sharpe Ratio
+    result = minimize(neg_sharpe_ratio, weights_init, method='SLSQP', bounds=bounds, constraints=constraints)
+
+    # Get the optimized weights
+    optimized_weights = result.x
+
+    return optimized_weights
+
+
+
+OUTPUT_KEY="tool_output"
+
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--user-params", required=True, help="JSON string for tool configuration")
@@ -99,8 +108,7 @@ if __name__ == "__main__":
     params = ToolParameters(**params_dict)
 
     output = run_tool(
-        params.max_drawdown,
-        params.stocks_ticker,
-        params.amount
+        config,
+        params
     )
     print(OUTPUT_KEY, output)
