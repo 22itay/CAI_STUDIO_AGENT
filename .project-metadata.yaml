@@ -11,7 +11,7 @@ environment_variables:
     default: 5
     description: >-
       Number of workflow runners to spawn for testing workflows within Agent Studio. If multiple concurrent 
-      users of agent studio are expected, you can increase this number accordingly.
+      users of Agent Studio are expected, you can increase this number accordingly.
 
 runtimes:
   - editor: PBJ Workbench
