@@ -8,7 +8,8 @@ date: "2023-07-22"
 
 environment_variables:
   AGENT_STUDIO_NUM_WORKFLOW_RUNNERS:
-    default: 5
+    default: "5"
+    required: true
     description: >-
       Number of workflow runners to spawn for testing workflows within Agent Studio. If multiple concurrent 
       users of Agent Studio are expected, you can increase this number accordingly.
