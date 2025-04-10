@@ -5,6 +5,7 @@ from pydantic import BaseModel as StudioBaseTool
 import os
 import json
 import argparse
+import glob
 
 class UserParameters(BaseModel):
     pass
@@ -24,20 +25,16 @@ def run_tool(
 
     # Remove trailing slash if present
     directory = directory.rstrip("/")
-
-    # List all files in the directory recursively
-    files_list = [
-        f"{directory}/{os.path.join(root, filename).replace(directory, '').lstrip(os.path.sep)}"
-        for root, _, files in os.walk(directory)
-        for filename in files
-    ]
     
-    if not files_list:
-        return f"No files found in the specified directory: {directory}"
+    # Verify that the directory exists
+    if not os.path.isdir(directory):
+        return f"Error: {directory} is not a directory."
 
-    # Prepare the file list as a formatted string
-    files = "\n- ".join(files_list)
-    return f"File paths in {directory}:\n- {files}"
+    # Use glob to get top-level items (files + directories) in the directory
+    pattern = os.path.join(directory, "*")
+    items = glob.glob(pattern)
+
+    return items
 
 
 OUTPUT_KEY="tool_output"

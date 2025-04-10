@@ -10,9 +10,8 @@ environment_variables:
   AGENT_STUDIO_NUM_WORKFLOW_RUNNERS:
     default: 5
     description: >-
-      Number of workflow runners to spawn for testing workflows within agent studio. A higher
-      number of workflow runners should be used if multiple concurrent Agent Studio users
-      are expected.
+      Number of workflow runners to spawn for testing workflows within Agent Studio. If multiple concurrent 
+      users of agent studio are expected, you can increase this number accordingly.
 
 runtimes:
   - editor: PBJ Workbench
@@ -72,8 +71,8 @@ tasks:
     script: startup_scripts/run-app.py
     long_summary: This application launcher a agent studio backend and frontend application.
     bypass_authentication: true
-    cpu: 2
-    memory: 8
+    cpu: 4
+    memory: 16
     is_embedded: true
     environment_variables:
       TASK_TYPE: START_APPLICATION
