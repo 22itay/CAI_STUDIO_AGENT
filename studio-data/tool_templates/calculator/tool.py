@@ -7,17 +7,38 @@ from calc import run_calc
 
 
 class UserParameters(BaseModel):
+    """
+    Parameters used to configure a tool. This may include API keys,
+    database connections, environment variables, etc.
+    """
     pass 
 
 
 class ToolParameters(BaseModel):
+    """
+    Arguments of a tool call. These arguments are passed to this tool whenever
+    an Agent calls this tool. The descriptions below are also provided to agents
+    to help them make informed decisions of what to pass to the tool.
+    """
     a: float = Field(description="first number")
     b: float = Field(description="second number")
     op: Literal["+", "-", "*", "/"] = Field(description="operator")
 
 
-OUTPUT_KEY="tool_output"
+def run_tool(params: UserParameters, args: ToolParameters):
+    """
+    Main tool code logic. Anything returned from this method is returned
+    from the tool back to the calling agent.
+    """
+    
+    return run_calc(
+        args.a,
+        args.b,
+        args.op
+    )
 
+
+OUTPUT_KEY="tool_output"
 
 
 if __name__ == "__main__":

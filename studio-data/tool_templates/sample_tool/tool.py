@@ -1,67 +1,73 @@
+"""
+Sample agent studio tool to showcase
+tool making capabilities.
+"""
+
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, Any
 import json 
 import argparse
 
 
 class UserParameters(BaseModel):
     """
-    Parameters used to configure the model and not needed for tool calling.
-    Examples are API keys, database passwords, etc.
+    Parameters used to configure a tool. This may include API keys,
+    database connections, environment variables, etc.
     """
-    user_key_1: str
-    user_key_2: Optional[str] = None 
+    user_key_1: str # User parameters can be required, and will lead to a tool failure if this parameter is missing.
+    user_key_2: Optional[str] = None  # User parameters can also be optional if they're not needed by the tool, but may be used.
     pass 
 
 
 class ToolParameters(BaseModel):
     """
-    Arguments to a tool. These arguments must be passed whenever
-    an agent calls a tool. These are different per tool call (i.e. a query).
+    Arguments of a tool call. These arguments are passed to this tool whenever
+    an Agent calls this tool. The descriptions below are also provided to agents
+    to help them make informed decisions of what to pass to the tool.
     """
-    param1: str = Field(description="First parameter that should be passed to the tool")
-    param2: str = Field(description="Second parameter to be passed to the tool")
-    param3: int = Field(description="This is a required integer field")
+    input1: str = Field(description="First parameter that should be passed to the tool")
+    input2: str = Field(description="Second parameter to be passed to the tool")
 
 
 
-# Optional: If the output key is detected
-# in the tools output stream, only data after the 
-# output key will be written to the tool output.
-OUTPUT_KEY = "tool_output"
-
-
-
-def run_tool(config: UserParameters, params: ToolParameters):
+def run_tool(config: UserParameters, args: ToolParameters) -> Any:
     """
-    Main tool code logic. This can run any logic for the tool that you need and can also
-    import code from other files in the tool directory.
-    
-    The agent will capture anything that's written to the tool's stdout, OR anything 
-    after the <OUTPUT_KEY> is detected in the output stream.
+    Main tool code logic. Anything returned from this method is returned
+    from the tool back to the calling agent.
     """
     
-    # NOTE: because we OUTPUT_KEY, these print lines will not be
-    # reported out to the tool output.
-    print("config: ", config)
-    print("params: ", params)
-    
-    # If we only want to dump data after a specific output
-    # key, we can do that as well. This helps ensure structured
-    # data is output from the tool.
-    structured_tool_output = {
-        "user_key1": config.user_key_1,
-        "combined_params": params.param1 + params.param2,
-        "twice_param3": params.param3 * 2
+    result_object = {
+        "combined": args.input1 + args.input2,
     }
-    return structured_tool_output
+    return result_object
 
+
+
+
+OUTPUT_KEY = "tool_output"
+"""
+When an agent calls a tool, technically the tool's entire stdout can be passed back to the agent.
+However, if an OUTPUT_KEY is present in a tool's main file, only stdout content *after* this key is
+passed to the agent. This allows us to return structured output to the agent while still retaining
+the entire stdout stream from a tool! By default, this feature is enabled, and anything returned
+from the run_tool() method above will be the structured output of the tool.
+"""
 
 
 if __name__ == "__main__":
+    """
+    Tool entrypoint. 
+    
+    The only two things that are required in a tool are the
+    ToolConfiguration and ToolArguments classes. Then, the only two arguments that are
+    passed to a tool entrypoint are "--tool-config" and "--tool-args", respectively. The rest
+    of the implementation is up to the tool builder - feel free to customize the entrypoint to your 
+    chosing!
+    """
+    
     parser = argparse.ArgumentParser()
-    parser.add_argument("--user-params", required=True, help="JSON string for tool configuration")
-    parser.add_argument("--tool-params", required=True, help="JSON string for tool arguments")
+    parser.add_argument("--user-params", required=True, help="Tool configuration")
+    parser.add_argument("--tool-params", required=True, help="Tool arguments")
     args = parser.parse_args()
     
     # Parse JSON into dictionaries
@@ -72,6 +78,6 @@ if __name__ == "__main__":
     config = UserParameters(**user_dict)
     params = ToolParameters(**tool_dict)
     
-    # Implement your tool logic
+    # Run the tool.
     output = run_tool(config, params)
     print(OUTPUT_KEY, output)

@@ -96,39 +96,6 @@ def extract_tool_class_name(code: str) -> str:
         raise ValueError(f"Error parsing Python code: {e}")
 
 
-def get_embedded_crewai_tool(
-    tool_instance: input_types.Input__ToolInstance, user_params_kv: Dict[str, str]
-) -> BaseTool:
-    relative_module_dir = os.path.abspath(tool_instance.source_folder_path)
-    module = _import_module_with_isolation(tool_instance.python_code_file_name.replace(".py", ""), relative_module_dir)
-    with open(os.path.join(relative_module_dir, tool_instance.python_code_file_name), "r") as code_file:
-        tool_code = code_file.read()
-        tool_class_name = extract_tool_class_name(tool_code)
-    studio_tool_class: Type[BaseModel] = getattr(module, tool_class_name)
-    user_param_base_model: Type[BaseModel] = getattr(module, "UserParameters")
-    user_params = user_param_base_model(**user_params_kv)
-    studio_tool_instance = studio_tool_class(user_parameters=user_params)
-
-    class EmbeddedCrewAITool(BaseTool):
-        agent_studio_id: str = tool_instance.id
-        name: str = studio_tool_instance.name
-        description: str = studio_tool_instance.description
-        args_schema: Type[BaseModel] = studio_tool_instance.args_schema
-
-        def _run(self, *args, **kwargs):
-            return studio_tool_instance._run(*args, **kwargs)
-
-    crewai_tool: BaseTool = EmbeddedCrewAITool()
-
-    # This is a workaround to use DB-specific name in the tool rather
-    # than the "mandatory" field set within the tool code.
-    crewai_tool.name = tool_instance.name
-    crewai_tool._generate_description()
-    # Force Python to reload module paths
-    importlib.invalidate_caches()
-    return crewai_tool
-
-
 def _get_skeleton_tool_code(code: str) -> str:
     """
     Extract the Tool class, ToolParameters class, UserParameters class, and the _run function from the given Python code.
@@ -555,22 +522,25 @@ def get_venv_tool(tool_instance: input_types.Input__ToolInstance, user_params_kv
         args_schema: Type[BaseModel] = get_venv_tool_tool_parameters_type(tool_code)
 
         def _run(self, *args, **kwargs):
-            result = subprocess.run(
-                [
-                    self.python_executable,
-                    self.python_file,
-                    "--user-params",
-                    json.dumps(dict(user_params)),
-                    "--tool-params",
-                    json.dumps(dict(kwargs)),
-                ],
-                capture_output=True,
-                text=True,
-            )
+            try:
+                result = subprocess.run(
+                    [
+                        self.python_executable,
+                        self.python_file,
+                        "--user-params",
+                        json.dumps(dict(user_params)),
+                        "--tool-params",
+                        json.dumps(dict(kwargs)),
+                    ],
+                    capture_output=True,
+                    text=True,
+                )
+            except Exception as e:
+                return f"Tool call failed: {e}"
             if result.returncode != 0:
                 return f"Error: {result.stderr or 'No error details found'}"
             if result.stderr:
-                return str(result.stderr)
+                return f"Error: {result.stderr or 'No error details found'}"
             output = str(result.stdout)
             if self.output_key and self.output_key in output:
                 output = output.split(self.output_key, 1)[-1].strip()

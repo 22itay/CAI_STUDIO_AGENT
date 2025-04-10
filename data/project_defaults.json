@@ -2,6 +2,16 @@
   "models": [],
   "tool_templates": [
     {
+      "id": "6ad37ef6-e049-444e-96db-f4e0faea949c",
+      "name": "Sample Tool",
+      "python_code_file_name": "tool.py",
+      "python_requirements_file_name": "requirements.txt",
+      "source_folder_path": "studio-data/tool_templates/sample_tool",
+      "is_venv_tool": true,
+      "pre_built": true,
+      "tool_image_path": "studio-data/dynamic_assets/tool_template_icons/graph.png"
+    },
+    {
       "id": "abcdd1d9-abcd-4b89-bbbb-6934c8d9010",
       "name": "Calculator Tool",
       "python_code_file_name": "tool.py",

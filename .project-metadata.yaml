@@ -6,6 +6,14 @@ specification_version: 1.0
 prototype_version: 1.0
 date: "2023-07-22"
 
+environment_variables:
+  AGENT_STUDIO_NUM_WORKFLOW_RUNNERS:
+    default: 5
+    description: >-
+      Number of workflow runners to spawn for testing workflows within agent studio. A higher
+      number of workflow runners should be used if multiple concurrent Agent Studio users
+      are expected.
+
 runtimes:
   - editor: PBJ Workbench
     kernel: Python 3.10
