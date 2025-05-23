@@ -13,11 +13,34 @@ environment_variables:
     description: >-
       Number of workflow runners to spawn for testing workflows within Agent Studio. If multiple concurrent 
       users of Agent Studio are expected, you can increase this number accordingly.
+  AIRGAP:
+    default: "false"
+    required: true
+    description: >-
+      set to "true" for on-prem airgap env.
+  PIP_INDEX_URL:
+    default: "https://pypi.org/simple"
+    required: true
+    description: >-
+      set python artifactory
+      override this for on-prem airgap env.
+  UV_INDEX_URL:
+    default: "https://pypi.org/simple"
+    required: true
+    description: >-
+      set python artifactory
+      override this for on-prem airgap env.
+  NPM_CONFIG_REGISTRY:
+    default: "https://registry.npmjs.org/"
+    required: true
+    description: >-
+      set nodejs artifactory
+      override this for on-prem airgap env.
 
 runtimes:
   - editor: PBJ Workbench
     kernel: Python 3.12
-    edition: Standard
+    edition: Standard-node
 
 tasks:
   - type: run_session

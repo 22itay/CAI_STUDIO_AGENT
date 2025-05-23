@@ -33,4 +33,11 @@ These docs are targeted for individuals managing the Agent Studio instance itsel
 These docs are targeted for individuals who are building custom Agent Studio tools
  - [Creating Custom Tools]()
 
-
+### For on-prem airgap
+insure you have Standard-node runtime (base image) your enviermant.
+set the AIRGAP flag to true
+to overide the python reposetory use the env var UV_INDEX_URL and PIP_INDEX_URL
+UV_INDEX_URL=https://my.custom.pypi/simple
+PIP_INDEX_URL=https://my.custom.pypi/simple
+to overide the nodejs (npm) reposetory use the env var NPM_CONFIG_REGISTRY
+NPM_CONFIG_REGISTRY=https://my.custom.npm
