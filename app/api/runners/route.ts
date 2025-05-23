@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import fetch from 'node-fetch';
 
+
+
 export async function GET(request: NextRequest) {
+  
   const numRunners = parseInt(process.env.AGENT_STUDIO_NUM_WORKFLOW_RUNNERS as string);
   const firstPort = 51000;
+
 
   // Build an array of fetch Promises
   const statusPromises: Promise<any>[] = [];
@@ -19,8 +23,8 @@ export async function GET(request: NextRequest) {
         }
         const statusData = await response.json();
         return {
-          endpoint: `http://localhost:${port}`,
-          status: statusData,
+           endpoint: `http://localhost:${port}`, 
+           status: statusData 
         };
       })
       .catch((error: Error) => {
@@ -32,5 +36,5 @@ export async function GET(request: NextRequest) {
 
   // Resolve all fetch calls
   const results = await Promise.all(statusPromises);
-  return NextResponse.json(results);
+  return NextResponse.json(results)
 }

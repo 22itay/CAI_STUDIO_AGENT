@@ -1,9 +1,3 @@
-"""
-Calculator tool which can do basic addition, subtraction, multiplication, and division.
-Division by 0 is not allowed.
-"""
-
-
 from pydantic import BaseModel, Field
 from typing import Literal
 import json 

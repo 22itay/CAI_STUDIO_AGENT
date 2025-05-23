@@ -13,7 +13,6 @@ from studio.proto.utils import is_field_set
 from cmlapi import CMLServiceApi
 import json
 import shutil
-import ast
 
 
 def list_tool_templates(
@@ -36,19 +35,22 @@ def list_tool_templates(
                 python_code = ""
                 python_requirements = ""
                 is_valid = True
-                status_message = ""
 
                 # Attempt to read the Python code
                 try:
                     python_code_file_path = os.path.join(template.source_folder_path, template.python_code_file_name)
                     with open(python_code_file_path, "r") as file:
                         python_code = file.read()
-                except FileNotFoundError as e:
-                    status_message = f"Tool template files not found: {str(e)}"
+                except Exception:
                     is_valid = False
-                except Exception as e:
-                    status_message = f"Error reading tool template files: {str(e)}"
-                    is_valid = False
+
+                # Validate the Python code if successfully read
+                # NOTE: with tools v2, there is no need to validate tool code. Tool code
+                # is the responsibility of the tool developer. We capture stdout in venv tools
+                # so error handling is much easier.
+                # validation_errors = []
+                # if python_code:
+                #     is_valid, validation_errors = tool_utils.validate_tool_code(python_code)
 
                 # Attempt to read the Python requirements
                 try:
@@ -57,23 +59,14 @@ def list_tool_templates(
                     )
                     with open(python_requirements_file_path, "r") as file:
                         python_requirements = file.read()
-                except FileNotFoundError as e:
-                    if not status_message:
-                        status_message = f"Tool template requirements not found: {str(e)}"
+                except Exception:
                     is_valid = False
-                except Exception as e:
-                    if not status_message:
-                        status_message = f"Error reading tool template requirements: {str(e)}"
-                    is_valid = False
+
+                # tool_metadata = json.dumps({"validation_errors": validation_errors})
 
                 tool_image_uri = ""
                 if template.tool_image_path:
                     tool_image_uri = os.path.relpath(template.tool_image_path, consts.DYNAMIC_ASSETS_LOCATION)
-
-                try:
-                    tool_description = ast.get_docstring(ast.parse(python_code)) if python_code else ""
-                except Exception:
-                    tool_description = "Unable to read tool description"
 
                 response_templates.append(
                     ToolTemplate(
@@ -82,11 +75,11 @@ def list_tool_templates(
                         python_code=python_code,
                         python_requirements=python_requirements,
                         source_folder_path=template.source_folder_path,
-                        tool_metadata=json.dumps({"status": status_message}),
+                        tool_metadata="{}",
                         is_valid=is_valid,
                         pre_built=template.pre_built,
                         tool_image_uri=tool_image_uri,
-                        tool_description=tool_description,
+                        tool_description="",
                         workflow_template_id=template.workflow_template_id,
                         is_venv_tool=template.is_venv_tool,
                     )
@@ -117,19 +110,19 @@ def get_tool_template(
             python_code = ""
             python_requirements = ""
             is_valid = True
-            status_message = ""
 
             # Attempt to read the Python code
             try:
                 python_code_file_path = os.path.join(template.source_folder_path, template.python_code_file_name)
                 with open(python_code_file_path, "r") as file:
                     python_code = file.read()
-            except FileNotFoundError as e:
-                status_message = f"Tool template files not found: {str(e)}"
+            except Exception:
                 is_valid = False
-            except Exception as e:
-                status_message = f"Error reading tool template files: {str(e)}"
-                is_valid = False
+
+            # # Validate the Python code if successfully read
+            # validation_errors = []
+            # if python_code:
+            #     is_valid, validation_errors = tool_utils.validate_tool_code(python_code)
 
             # Attempt to read the Python requirements
             try:
@@ -138,40 +131,25 @@ def get_tool_template(
                 )
                 with open(python_requirements_file_path, "r") as file:
                     python_requirements = file.read()
-            except FileNotFoundError as e:
-                if not status_message:
-                    status_message = f"Tool template requirements not found: {str(e)}"
-                is_valid = False
-            except Exception as e:
-                if not status_message:
-                    status_message = f"Error reading tool template requirements: {str(e)}"
+            except Exception:
                 is_valid = False
 
             # Extract user parameters from the Python code
-            user_params_dict = {}
+            user_params = []
             if python_code:
                 try:
-                    user_params_dict = tool_utils.extract_user_params_from_code(python_code)
+                    user_params = tool_utils.extract_user_params_from_code(python_code)
                 except ValueError as e:
-                    status_message = f"Error parsing Python code: {str(e)}"
-                    is_valid = False
+                    user_params = [f"Error parsing Python code: {e}"]
+
+            # Create tool_metadata as a JSON string
+            tool_metadata = json.dumps({"user_params": user_params})
 
             tool_image_uri = ""
             if template.tool_image_path:
                 tool_image_uri = os.path.relpath(template.tool_image_path, consts.DYNAMIC_ASSETS_LOCATION)
 
-            try:
-                tool_description = ast.get_docstring(ast.parse(python_code)) if python_code else ""
-            except Exception:
-                tool_description = "Unable to read tool description"
-
-            # Create tool_metadata as a JSON string
-            tool_metadata = json.dumps({
-                "user_params": list(user_params_dict.keys()),
-                "user_params_metadata": user_params_dict,
-                "status": status_message
-            })
-
+            # Convert the template to protobuf and set file content
             return GetToolTemplateResponse(
                 template=ToolTemplate(
                     id=template.id,
@@ -183,7 +161,7 @@ def get_tool_template(
                     is_valid=is_valid,
                     pre_built=template.pre_built,
                     tool_image_uri=tool_image_uri,
-                    tool_description=tool_description,
+                    tool_description="",
                     workflow_template_id=template.workflow_template_id,
                     is_venv_tool=template.is_venv_tool,
                 )
@@ -220,24 +198,11 @@ def add_tool_template(
         root_tool_dir = consts.TOOL_TEMPLATE_CATALOG_LOCATION
         tool_dir = os.path.join(root_tool_dir, tool_dir_basename)
 
-        # Check for uniqueness of tool template name considering global templates
+        # Check for uniqueness of tool template name before creating files
         with dao.get_session() as session:
-            existing_template = (
-                session.query(db_model.ToolTemplate)
-                .filter(
-                    db_model.ToolTemplate.name == request.tool_template_name,
-                    (
-                        (db_model.ToolTemplate.workflow_template_id == request.workflow_template_id) |
-                        (db_model.ToolTemplate.workflow_template_id.is_(None))
-                    )
-                )
-                .first()
-            )
+            existing_template = session.query(db_model.ToolTemplate).filter_by(name=request.tool_template_name).first()
             if existing_template:
-                if existing_template.workflow_template_id is None:
-                    raise ValueError("A global tool template with this name already exists.")
-                else:
-                    raise ValueError("A tool template with this name already exists for this workflow template.")
+                raise ValueError("A tool template with this name already exists.")
 
         # Create the .tool directory and tool template folder
         try:
@@ -309,24 +274,16 @@ def update_tool_template(
             # Update database fields
             if request.tool_template_name:
                 tool_template.name = request.tool_template_name
-                # Check for uniqueness considering global templates
                 existing_template = (
                     session.query(db_model.ToolTemplate)
                     .filter(
                         db_model.ToolTemplate.name == request.tool_template_name,
                         db_model.ToolTemplate.id != request.tool_template_id,
-                        (
-                            (db_model.ToolTemplate.workflow_template_id == tool_template.workflow_template_id) |
-                            (db_model.ToolTemplate.workflow_template_id.is_(None))
-                        )
                     )
-                    .first()
+                    .one_or_none()
                 )
                 if existing_template:
-                    if existing_template.workflow_template_id is None:
-                        raise ValueError("A global tool template with this name already exists.")
-                    else:
-                        raise ValueError("A tool template with this name already exists for this workflow template.")
+                    raise ValueError(f"A tool template with the name '{request.tool_template_name}' already exists.")
             if request.tmp_tool_image_path:
                 # Validate temporary image file exists and has valid extension
                 if not os.path.exists(request.tmp_tool_image_path):
@@ -362,8 +319,7 @@ def remove_tool_template(
         with dao.get_session() as session:
             template = session.query(db_model.ToolTemplate).filter_by(id=request.tool_template_id).one_or_none()
             if not template:
-                print(f"Tool template with ID '{request.tool_template_id}' not found, assuming already deleted")
-                return RemoveToolTemplateResponse()
+                raise ValueError(f"Tool template with ID '{request.tool_template_id}' not found.")
 
             if template.pre_built:
                 raise ValueError(
@@ -375,22 +331,15 @@ def remove_tool_template(
                 try:
                     if os.path.exists(template.source_folder_path):
                         shutil.rmtree(template.source_folder_path)
-                        print(f"Deleted tool template directory: {template.source_folder_path}")
-                    else:
-                        print(f"Tool template directory not found: {template.source_folder_path}")
                 except Exception as e:
-                    print(f"Failed to delete tool template directory: {e}")
+                    raise ValueError(f"Failed to delete tool template code folder: {e}")
 
             if template.tool_image_path:
                 try:
                     if os.path.exists(template.tool_image_path):
                         os.remove(template.tool_image_path)
-                        print(f"Deleted tool template image: {template.tool_image_path}")
-                    else:
-                        print(f"Tool template image not found: {template.tool_image_path}")
                 except Exception as e:
                     print(f"Failed to delete tool template image: {e}")
-
             session.delete(template)
             session.commit()
         return RemoveToolTemplateResponse()

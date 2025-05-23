@@ -40,14 +40,12 @@ cleanup() {
   pkill -f "npm run start"
 
   # Kill our workflow runner processes.
-  if [ "$AGENT_STUDIO_RENDER_MODE" = "studio" ]; then
-    for pid in "${RUNNER_PIDS[@]}"; do
-      if ps -p "$pid" > /dev/null; then
-        echo "Killing workflow runner with PID: $pid"
-        kill "$pid"
-      fi
-    done
-  fi
+  for pid in "${RUNNER_PIDS[@]}"; do
+    if ps -p "$pid" > /dev/null; then
+      echo "Killing workflow runner with PID: $pid"
+      kill "$pid"
+    fi
+  done
 
   exit
 }
@@ -60,21 +58,19 @@ trap cleanup SIGINT SIGTERM
 echo "Current AGENT_STUDIO_SERVICE_IP: $AGENT_STUDIO_SERVICE_IP"
 
 # Spin up workflow runners.
-if [ "$AGENT_STUDIO_RENDER_MODE" = "studio" ]; then
-  DEFAULT_WORKFLOW_RUNNER_STARTING_PORT=51000
-  for (( i=0; i<AGENT_STUDIO_NUM_WORKFLOW_RUNNERS; i++ )); do
-    PORT_NUM=$((DEFAULT_WORKFLOW_RUNNER_STARTING_PORT + i))
-    echo "Starting workflow runner on port $PORT_NUM..."
-    
-    # Launch the runner using the virtual environment's python
-    studio/workflow_engine/.venv/bin/python -m uvicorn \
-      studio.workflow_engine.src.engine.entry.runner:app \
-      --port "$PORT_NUM" &
-    
-    # Save the process PID.
-    RUNNER_PIDS+=($!)
-  done
-fi
+DEFAULT_WORKFLOW_RUNNER_STARTING_PORT=51000
+for (( i=0; i<AGENT_STUDIO_NUM_WORKFLOW_RUNNERS; i++ )); do
+  PORT_NUM=$((DEFAULT_WORKFLOW_RUNNER_STARTING_PORT + i))
+  echo "Starting workflow runner on port $PORT_NUM..."
+  
+  # Launch the runner using the virtual environment's python
+  studio/workflow_engine/.venv/bin/python -m uvicorn \
+    studio.workflow_engine.src.engine.entry.fastapi:app \
+    --port "$PORT_NUM" &
+  
+  # Save the process PID.
+  RUNNER_PIDS+=($!)
+done
 
 
 # If we are starting up the main app (not the workflow app), then we also want to 
@@ -116,17 +112,6 @@ if [ "$AGENT_STUDIO_RENDER_MODE" = "studio" ]; then
 else
   echo "Starting up workflow app UI."
 fi 
-
-# For local development, we need to set up an http proxy to the ops server.
-# For both production and development builds, whenever we iframe content, we need to make sure that:
-#  1. the iframed application runs in the same domain as the main application, and
-#  2. transport layer security matches (either HTTP or HTTPS)
-# For this reason, for local dev, we need to iframe from the samme origin (127.0.0.1).
-# In production CML application, we need to get the full application URL.
-if [ "$AGENT_STUDIO_DEPLOYMENT_CONFIG" = "dev" ]; then
-  echo "Starting ops proxy server..."
-  PYTHONUNBUFFERED=1 uv run bin/start-ops-proxy.py &
-fi
 
 # If running in development mode, run the dev server so we get live
 # updates. If in production mode, build the optimized server and serve it.

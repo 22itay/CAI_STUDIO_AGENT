@@ -3,7 +3,7 @@ import os
 import shutil
 from uuid import uuid4
 import cmlapi
-from typing import Union, List, Optional, Tuple
+from typing import Union, List, Optional
 from sqlalchemy.exc import SQLAlchemyError
 import requests
 from google.protobuf.json_format import MessageToDict
@@ -13,18 +13,13 @@ from cmlapi import CMLServiceApi
 from studio.db.dao import AgentStudioDao
 from studio.api import *
 from studio.db import model as db_model
-from studio.models.utils import get_studio_default_model_id, get_model_api_key_from_env
+from studio.models.utils import get_studio_default_model_id
 import studio.cross_cutting.utils as cc_utils
 from studio.proto.utils import is_field_set
 from studio.cross_cutting.utils import get_studio_subdirectory
 import studio.consts as consts
 from studio.workflow.utils import is_custom_model_root_dir_feature_enabled
 from studio.workflow.runners import get_workflow_runners
-from studio.tools.utils import (
-    read_tool_instance_code,
-    extract_user_params_from_code
-)
-from studio.cross_cutting.apiv2 import get_api_key_from_env, validate_api_key
 
 # Import engine code manually. Eventually when this code becomes
 # a separate git repo, or a custom runtime image, this path call
@@ -121,14 +116,6 @@ def _create_collated_input(
             tool_instance_db_model = next((t for t in tool_instance_db_models if t.id == t_id), None)
             if not tool_instance_db_model:
                 raise ValueError(f"Tool Instance with ID '{t_id}' not found.")
-            
-            status_message = ""
-            try: 
-                tool_code, _ = read_tool_instance_code(tool_instance_db_model)
-                user_params_dict = extract_user_params_from_code(tool_code)
-            except Exception as e:
-                status_message = f"Could not extract user param metadata from code: {str(e)}"
-                    
             tool_instance_inputs.append(
                 input_types.Input__ToolInstance(
                     id=tool_instance_db_model.id,
@@ -136,11 +123,6 @@ def _create_collated_input(
                     python_code_file_name=tool_instance_db_model.python_code_file_name,
                     python_requirements_file_name=tool_instance_db_model.python_requirements_file_name,
                     source_folder_path=tool_instance_db_model.source_folder_path,
-                    tool_metadata=json.dumps({
-                        "user_params": list(user_params_dict.keys()),
-                        "user_params_metadata": user_params_dict,
-                        "status": status_message
-                    }),
                     tool_image_uri=(
                         os.path.relpath(tool_instance_db_model.tool_image_path, consts.DYNAMIC_ASSETS_LOCATION)
                         if tool_instance_db_model.tool_image_path
@@ -158,33 +140,19 @@ def _create_collated_input(
             language_model_db_model = next((lm for lm in language_model_db_models if lm.model_id == lm_id), None)
             if not language_model_db_model:
                 raise ValueError(f"Language Model with ID '{lm_id}' not found.")
-            
-            try:
-                # Get API key from environment with error handling
-                api_key = get_model_api_key_from_env(language_model_db_model.model_id, cml)
-                if not api_key:
-                    raise ValueError(
-                        f"API key is required but not found for model {language_model_db_model.model_name} "
-                        f"({language_model_db_model.model_id}). Please configure the API key in project environment variables."
-                    )
-
-                language_model_inputs.append(
-                    input_types.Input__LanguageModel(
-                        model_id=language_model_db_model.model_id,
-                        model_name=language_model_db_model.model_name,
-                        config=input_types.Input__LanguageModelConfig(
-                            provider_model=language_model_db_model.provider_model,
-                            model_type=language_model_db_model.model_type,
-                            api_base=language_model_db_model.api_base or None,
-                            api_key=api_key,  # API key is required
-                        ),
-                        generation_config=llm_generation_config,
-                    )
+            language_model_inputs.append(
+                input_types.Input__LanguageModel(
+                    model_id=language_model_db_model.model_id,
+                    model_name=language_model_db_model.model_name,
+                    config=input_types.Input__LanguageModelConfig(
+                        provider_model=language_model_db_model.provider_model,
+                        model_type=language_model_db_model.model_type,
+                        api_base=language_model_db_model.api_base or None,
+                        api_key=language_model_db_model.api_key or None,
+                    ),
+                    generation_config=llm_generation_config,
                 )
-            except Exception as e:
-                raise ValueError(
-                    f"Failed to configure model {language_model_db_model.model_name}: {str(e)}"
-                )
+            )
 
         deployed_workflow_instance_id = cc_utils.get_random_compact_string()
 
@@ -226,6 +194,7 @@ def test_workflow(
     """
     Test a workflow by creating agent instances, tasks, and a Crew AI execution.
     """
+    print("TEST WORKFLOW ENTRY 1")
     try:
         collated_input = _create_collated_input(request, cml, dao)
         tool_user_params_kv = {
@@ -361,7 +330,6 @@ def get_deployed_workflow_config(deployable_workflow_dir: str) -> dict:
             "model_root_dir": os.path.join(get_studio_subdirectory(), deployable_workflow_dir),
             "model_file_path": "src/engine/entry/workbench.py",
             "deployed_workflow_model_config_location": "/home/cdsw/workflow/config.json",
-            "model_execution_dir": "/home/cdsw"
         }
     else:
         return {
@@ -372,187 +340,173 @@ def get_deployed_workflow_config(deployable_workflow_dir: str) -> dict:
             "deployed_workflow_model_config_location": os.path.join(
                 "/home/cdsw", get_studio_subdirectory(), deployable_workflow_dir, "workflow", "config.json"
             ),
-            "model_execution_dir": os.path.join("/home/cdsw", get_studio_subdirectory(), deployable_workflow_dir)
         }
 
 
 def deploy_workflow(
-    request: DeployWorkflowRequest, cml: CMLServiceApi, dao: AgentStudioDao
+    request: DeployWorkflowRequest, cml: CMLServiceApi, dao: AgentStudioDao = None
 ) -> DeployWorkflowResponse:
-    """Deploy a workflow."""
+    """
+    Deploy a workflow to the CML model and application.
+    """
+    cml_model_id, model_build_id = None, None
+    workflow_frontend_application: Optional[cmlapi.Application] = None
     try:
-        # Get API key from project environment
-        key_id, key_value = get_api_key_from_env(cml)
-        if not key_id or not key_value:
-            raise RuntimeError("CML API v2 key not found. You need to configure a CML API v2 key for Agent Studio to deploy workflows.")
-            
-        # Validate the API key
-        if not validate_api_key(key_id, key_value, cml):
-            raise RuntimeError("CML API v2 key validation has failed. You need to rotate the CML API v2 key for Agent Studio to deploy your workflow.")
+        # Create a unique ID for this deployed workflow
+        deployed_workflow_id = str(uuid4())
 
-        cml_model_id, model_build_id = None, None
-        workflow_frontend_application: Optional[cmlapi.Application] = None
-        try:
-            # Create a unique ID for this deployed workflow
-            deployed_workflow_id = str(uuid4())
+        with dao.get_session() as session:
+            workflow = session.query(db_model.Workflow).filter(db_model.Workflow.id == request.workflow_id).first()
+            if not workflow:
+                raise ValueError(f"Workflow with ID '{request.workflow_id}' not found.")
+            # if workflow.is_draft:
+            #     raise ValueError(
+            #         f"Workflow '{workflow.name}' can't be deployed in draft state. Publish your workflow first."
+            #     )
+            workflow_id = workflow.id
+            workflow_directory = workflow.directory
+        collated_input = _create_collated_input(request, cml, dao)
 
-            with dao.get_session() as session:
-                workflow = session.query(db_model.Workflow).filter(db_model.Workflow.id == request.workflow_id).first()
-                if not workflow:
-                    raise ValueError(f"Workflow with ID '{request.workflow_id}' not found.")
-                # if workflow.is_draft:
-                #     raise ValueError(
-                #         f"Workflow '{workflow.name}' can't be deployed in draft state. Publish your workflow first."
-                #     )
-                workflow_id = workflow.id
-                workflow_directory = workflow.directory
-            collated_input = _create_collated_input(request, cml, dao)
+        # k8s service labels are limited to 63 characters in length. the service that serves this
+        # model will be labeled with "ds-runtime-workflow-model-<workflow_name>-HHHHHHHH-XXX-XXX". 26 characters are used for "ds-runtime-"
+        # and 17 characters are used for "-HHHHHHHH-XXX-XXX", which leaves 63 - 26 - 17 = 20 characters for the name
+        # of the workflow, including spaces and special characters. For longer workflow names, this information will get cut off,
+        # but the model description (and workflow Application) will still contain the entire name string.
+        #
+        # components of the name:
+        #   "ds-runtime": CDSW-specific, we don't have a say
+        #   "workflow_model_": identifier that represents a workflow
+        #   "_HHHHHHHH": 8-character hex idintifier that we add to each workflow instance
+        #   "-XXX-XXX": CDSW-specfic, we don't have control over this
+        #
+        # ALSO, there's a fluent bit config volume mount that is in the form of:
+        #  "workflow-model-<name>-<8hex>-XXX-XXXX-fluent-bit-config"
+        #  which even FURTHER limits our name to 14 characters (!)
+        cml_model_name_internal = collated_input.workflow.name[-13:] + "_" + collated_input.workflow.deployment_id
+        cml_model_name = f"wf_model_{cml_model_name_internal}"
 
-            # k8s service labels are limited to 63 characters in length. the service that serves this
-            # model will be labeled with "ds-runtime-workflow-model-<workflow_name>-HHHHHHHH-XXX-XXX". 26 characters are used for "ds-runtime-"
-            # and 17 characters are used for "-HHHHHHHH-XXX-XXX", which leaves 63 - 26 - 17 = 20 characters for the name
-            # of the workflow, including spaces and special characters. For longer workflow names, this information will get cut off,
-            # but the model description (and workflow Application) will still contain the entire name string.
-            #
-            # components of the name:
-            #   "ds-runtime": CDSW-specific, we don't have a say
-            #   "workflow_model_": identifier that represents a workflow
-            #   "_HHHHHHHH": 8-character hex idintifier that we add to each workflow instance
-            #   "-XXX-XXX": CDSW-specfic, we don't have control over this
-            #
-            # ALSO, there's a fluent bit config volume mount that is in the form of:
-            #  "workflow-model-<name>-<8hex>-XXX-XXXX-fluent-bit-config"
-            #  which even FURTHER limits our name to 14 characters (!)
-            cml_model_name_internal = collated_input.workflow.name[:22] + "_" + collated_input.workflow.deployment_id
-            cml_model_name = f"{cml_model_name_internal}"
+        deployed_workflow_instance_name = f"{collated_input.workflow.name}_{collated_input.workflow.deployment_id}"
 
-            deployed_workflow_instance_name = f"{collated_input.workflow.name}_{collated_input.workflow.deployment_id}"
+        # Create the deployed workflow directory
+        deployable_workflow_dir = os.path.join(consts.DEPLOYABLE_WORKFLOWS_LOCATION, deployed_workflow_id)
+        if not os.path.exists(deployable_workflow_dir):
+            os.makedirs(deployable_workflow_dir)
 
-            # Create the deployed workflow directory
-            deployable_workflow_dir = os.path.join(consts.DEPLOYABLE_WORKFLOWS_LOCATION, deployed_workflow_id)
-            if not os.path.exists(deployable_workflow_dir):
-                os.makedirs(deployable_workflow_dir)
-
-            env_variable_overrides = dict(request.env_variable_overrides) if request.env_variable_overrides else dict()
-            env_vars_for_cml_model = dict()
-            for tool_id, parameters in request.tool_user_parameters.items():
-                env_vars_for_cml_model.update(
-                    {f"TOOL_{tool_id.replace('-', '_')}_USER_PARAMS_{k}": v for k, v in parameters.parameters.items()}
-                )
-            for lm in collated_input.language_models:
-                env_var_key_name = f"MODEL_{lm.model_id.replace('-', '_')}_CONFIG"
-                env_vars_for_cml_model.update({env_var_key_name: json.dumps(lm.config.model_dump())})
-                lm.config = None  # Remove the model config before serializing to JSON and saving it in a file.
-
-            # Create a workflow config object for the deployed workflow and write it to our new deployed
-            # workflow directory
-            os.makedirs(os.path.join(deployable_workflow_dir, "workflow"), exist_ok=True)
-            workflow_config_config_file_path = os.path.join(deployable_workflow_dir, "workflow", "config.json")
-            with open(workflow_config_config_file_path, "w") as config_file:
-                json.dump(collated_input.model_dump(), config_file, indent=2)
-
-            # Copy over our workflow engine code into our deployed workflow directory
-            # NOTE: this will go away once we move to a dedicated repo for workflow engines
-            # NOTE: for workbenches without the model root dir feature enabled, we are technically installing
-            # the workflow_engine package directly as part of the cdsw-build.sh script, so this copy may
-            # not be necessary.
-            def workflow_engine_ignore(src, names):
-                return {".venv", ".ruff_cache", "__pycache__"}
-
-            shutil.copytree(
-                os.path.join("studio", "workflow_engine"),
-                deployable_workflow_dir,
-                dirs_exist_ok=True,
-                ignore=workflow_engine_ignore,
-            )
-
-            # Copy over the workflow directory into the deployed workflow directory.
-            # we keep the "studio-data/" upper-level directory for consistency.
-            def studio_data_workflow_ignore(src, names):
-                if os.path.basename(src) == "studio-data":
-                    return {"deployable_workflows", "tool_templates", "temp_files"}
-                elif os.path.basename(src) == "workflows":
-                    return {name for name in names if name != os.path.basename(workflow_directory)}
-                else:
-                    return {".venv", ".next", "node_modules", ".nvm", ".requirements_hash.txt"}
-
-            shutil.copytree(
-                "studio-data", os.path.join(deployable_workflow_dir, "studio-data"), ignore=studio_data_workflow_ignore
-            )
-
-            # Get some deployed workflow configuration parameters based on the version
-            # of workbench running, deployment pattern, and entitlements that are currently enabled
-            deployed_workflow_config = get_deployed_workflow_config(deployable_workflow_dir)
-            print(json.dumps(deployed_workflow_config, indent=2))
-
+        env_variable_overrides = dict(request.env_variable_overrides) if request.env_variable_overrides else dict()
+        env_vars_for_cml_model = dict()
+        for tool_id, parameters in request.tool_user_parameters.items():
             env_vars_for_cml_model.update(
-                {
-                    "AGENT_STUDIO_OPS_ENDPOINT": get_ops_endpoint(),
-                    "AGENT_STUDIO_WORKFLOW_ARTIFACT_TYPE": "config_file",
-                    "AGENT_STUDIO_WORKFLOW_ARTIFACT": deployed_workflow_config["deployed_workflow_model_config_location"],
-                    "AGENT_STUDIO_WORKFLOW_NAME": deployed_workflow_instance_name,
-                    "AGENT_STUDIO_MODEL_EXECUTION_DIR": deployed_workflow_config["model_execution_dir"],
-                    "CDSW_APIV2_KEY": key_value,  # Pass the validated API key
-                    "CDSW_PROJECT_ID": os.getenv("CDSW_PROJECT_ID"),  # Pass the project ID
-                }
+                {f"TOOL_{tool_id.replace('-', '_')}_USER_PARAMS_{k}": v for k, v in parameters.parameters.items()}
             )
-            env_vars_for_cml_model.update(env_variable_overrides)
+        for lm in collated_input.language_models:
+            env_var_key_name = f"MODEL_{lm.model_id.replace('-', '_')}_CONFIG"
+            env_vars_for_cml_model.update({env_var_key_name: json.dumps(lm.config.model_dump())})
+            lm.config = None  # Remove the model config before serializing to JSON and saving it in a file.
 
-            cml_model_id, model_build_id = cc_utils.deploy_cml_model(
-                cml=cml,
-                model_name=cml_model_name,
-                model_description=f"Model for workflow {deployed_workflow_instance_name}",
-                model_build_comment=f"Build for workflow {deployed_workflow_instance_name}",
-                model_root_dir=deployed_workflow_config["model_root_dir"],
-                model_file_path=deployed_workflow_config["model_file_path"],
-                function_name="api_wrapper",
-                runtime_identifier=cc_utils.get_deployed_workflow_runtime_identifier(cml),
-                deployment_config=cmlapi.ShortCreateModelDeployment(
-                    cpu=2,
-                    memory=4,
-                    nvidia_gpus=0,
-                    environment=env_vars_for_cml_model,
-                    replicas=1,
-                ),
-            )
+        # Create a workflow config object for the deployed workflow and write it to our new deployed
+        # workflow directory
+        os.makedirs(os.path.join(deployable_workflow_dir, "workflow"), exist_ok=True)
+        workflow_config_config_file_path = os.path.join(deployable_workflow_dir, "workflow", "config.json")
+        with open(workflow_config_config_file_path, "w") as config_file:
+            json.dump(collated_input.model_dump(), config_file, indent=2)
 
-            # Save deployed workflow details to the database
-            deployed_workflow_instance = db_model.DeployedWorkflowInstance(
-                id=deployed_workflow_id,
-                name=deployed_workflow_instance_name,
-                workflow_id=workflow_id,
-                cml_deployed_model_id=cml_model_id,
-                is_stale=False,
-            )
-            workflow_frontend_application = create_application_for_deployed_workflow(
-                deployed_workflow_instance, request.bypass_authentication, cml
-            )
+        # Copy over our workflow engine code into our deployed workflow directory
+        # NOTE: this will go away once we move to a dedicated repo for workflow engines
+        # NOTE: for workbenches without the model root dir feature enabled, we are technically installing
+        # the workflow_engine package directly as part of the cdsw-build.sh script, so this copy may
+        # not be necessary.
+        def workflow_engine_ignore(src, names):
+            return {".venv", ".ruff_cache", "__pycache__"}
 
-            session.add(deployed_workflow_instance)
-            session.commit()
+        shutil.copytree(
+            os.path.join("studio", "workflow_engine"),
+            deployable_workflow_dir,
+            dirs_exist_ok=True,
+            ignore=workflow_engine_ignore,
+        )
 
-            return DeployWorkflowResponse(
-                deployed_workflow_name=deployed_workflow_instance_name,
-                deployed_workflow_id=deployed_workflow_id,
-                cml_deployed_model_id=cml_model_id,
-            )
-        except SQLAlchemyError as e:
-            if cml_model_id:
-                _cleanup_deployments(cml, cml_model_id)
-            if workflow_frontend_application:
-                cleanup_deployed_workflow_application(cml, workflow_frontend_application)
-            raise RuntimeError(f"Database error occured while deploying workflow: {str(e)}")
-        except ValueError as e:
-            raise RuntimeError(f"Validation error: {str(e)}")
-        except Exception as e:
-            if cml_model_id:
-                _cleanup_deployments(cml, cml_model_id)
-            if workflow_frontend_application:
-                cleanup_deployed_workflow_application(cml, workflow_frontend_application)
-            raise RuntimeError(f"Unexpected error occurred while deploying workflow: {str(e)}")
+        # Copy over the workflow directory into the deployed workflow directory.
+        # we keep the "studio-data/" upper-level directory for consistency.
+        def studio_data_workflow_ignore(src, names):
+            if os.path.basename(src) == "studio-data":
+                return {"deployable_workflows", "tool_templates", "temp_files"}
+            elif os.path.basename(src) == "workflows":
+                return {name for name in names if name != os.path.basename(workflow_directory)}
+            else:
+                return {".venv", ".next", "node_modules", ".nvm", ".requirements_hash.txt"}
 
+        shutil.copytree(
+            "studio-data", os.path.join(deployable_workflow_dir, "studio-data"), ignore=studio_data_workflow_ignore
+        )
+
+        # Get some deployed workflow configuration parameters based on the version
+        # of workbench running, deployment pattern, and entitlements that are currently enabled
+        deployed_workflow_config = get_deployed_workflow_config(deployable_workflow_dir)
+        print(json.dumps(deployed_workflow_config, indent=2))
+
+        env_vars_for_cml_model.update(
+            {
+                "AGENT_STUDIO_OPS_ENDPOINT": get_ops_endpoint(),
+                "AGENT_STUDIO_WORKFLOW_ARTIFACT_TYPE": "config_file",
+                "AGENT_STUDIO_WORKFLOW_ARTIFACT": deployed_workflow_config["deployed_workflow_model_config_location"],
+                "AGENT_STUDIO_WORKFLOW_NAME": deployed_workflow_instance_name,
+                "CDSW_APIV2_KEY": os.getenv("CDSW_APIV2_KEY"),
+            }
+        )
+        env_vars_for_cml_model.update(env_variable_overrides)
+
+        cml_model_id, model_build_id = cc_utils.deploy_cml_model(
+            cml=cml,
+            model_name=cml_model_name,
+            model_description=f"Model for workflow {deployed_workflow_instance_name}",
+            model_build_comment=f"Build for workflow {deployed_workflow_instance_name}",
+            model_root_dir=deployed_workflow_config["model_root_dir"],
+            model_file_path=deployed_workflow_config["model_file_path"],
+            function_name="api_wrapper",
+            runtime_identifier=cc_utils.get_deployed_workflow_runtime_identifier(cml),
+            deployment_config=cmlapi.ShortCreateModelDeployment(
+                cpu=1,
+                memory=2,
+                nvidia_gpus=0,
+                environment=env_vars_for_cml_model,
+                replicas=1,
+            ),
+        )
+
+        # Save deployed workflow details to the database
+        deployed_workflow_instance = db_model.DeployedWorkflowInstance(
+            id=deployed_workflow_id,
+            name=deployed_workflow_instance_name,
+            workflow_id=workflow_id,
+            cml_deployed_model_id=cml_model_id,
+            is_stale=False,
+        )
+        workflow_frontend_application = create_application_for_deployed_workflow(
+            deployed_workflow_instance, request.bypass_authentication, cml
+        )
+
+        session.add(deployed_workflow_instance)
+        session.commit()
+
+        return DeployWorkflowResponse(
+            deployed_workflow_name=deployed_workflow_instance_name,
+            deployed_workflow_id=deployed_workflow_id,
+            cml_deployed_model_id=cml_model_id,
+        )
+    except SQLAlchemyError as e:
+        if cml_model_id:
+            _cleanup_deployments(cml, cml_model_id)
+        if workflow_frontend_application:
+            cleanup_deployed_workflow_application(cml, workflow_frontend_application)
+        raise RuntimeError(f"Database error occured while deploying workflow: {str(e)}")
+    except ValueError as e:
+        raise RuntimeError(f"Validation error: {str(e)}")
     except Exception as e:
-        raise RuntimeError(f"Failed to deploy workflow: {str(e)}")
+        if cml_model_id:
+            _cleanup_deployments(cml, cml_model_id)
+        if workflow_frontend_application:
+            cleanup_deployed_workflow_application(cml, workflow_frontend_application)
+        raise RuntimeError(f"Unexpected error occurred while deploying workflow: {str(e)}")
 
 
 def undeploy_workflow(

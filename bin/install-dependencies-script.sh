@@ -1,10 +1,5 @@
 #!/bin/bash
 
-# In some slower network environments, UV timeouts will lead
-# to installation failures. We can increase this manually for
-# the duration of this script.
-export UV_HTTP_TIMEOUT=3600
-
 # Install python dependencies in uv created environment
 # This uses pyproject.toml & uv.lock file to install dependencies
 # this should create a subdirectory called .venv (if it doesn't exist)
@@ -28,7 +23,6 @@ npm run build
 
 echo "Configuring workflow engine virtual environment..."
 cd studio/workflow_engine
-if [ ! -d ".venv" ]; then
-    uv venv
-fi
+rm -rf .venv
+uv venv
 VIRTUAL_ENV=.venv uv sync --all-extras

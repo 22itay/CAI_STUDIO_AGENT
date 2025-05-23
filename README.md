@@ -22,7 +22,6 @@ These docs are targeted for people that are using Agent Studio to build and depl
  - Configure an LLM for your agents to use. ([LLMs User Guide](./docs/user_guide/models.md))
  - Create new tools or go through our existing set of tools. *This step is optional.* ([Tools User Guide](./docs/user_guide/tools.md))
  - Create, test, deploy and manage workflows. ([Workflows User Guide](./docs/user_guide/workflows.md))
- - Learn about using our example prepackaged workflow templates ([Workflow Templates Guide](docs/user_guide/workflow_templates.md))
  - Monitor your workflows. ([Monitoring User Guide](./docs/user_guide/monitoring.md))
  - Build custom UIs and [Applications](https://docs.cloudera.com/machine-learning/cloud/applications/topics/ml-applications-c.html) on top of your deployed workflows. ([Custom Applications Guide](./docs/user_guide/custom_workflow_application.md))
 
@@ -32,6 +31,6 @@ These docs are targeted for individuals managing the Agent Studio instance itsel
 
 ### For Agent Studio Tool Developers
 These docs are targeted for individuals who are building custom Agent Studio tools
- - [Creating Custom Tools](./docs/user_guide/custom_tools.md)
+ - [Creating Custom Tools]()
 
 

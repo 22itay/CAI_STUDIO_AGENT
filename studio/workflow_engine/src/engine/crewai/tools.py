@@ -2,7 +2,10 @@
 
 from typing import Dict, Optional, Type
 from pydantic import BaseModel
+import sys
+from contextlib import contextmanager
 import os
+import importlib
 from crewai.tools import BaseTool
 import ast
 from typing import Optional
@@ -17,6 +20,63 @@ import venv
 
 import engine.types as input_types
 from engine.types import *
+
+
+def _import_module_with_isolation(module_name: str, module_path: str):
+    """
+    Import a module while ensuring isolation from previously imported modules,
+    while properly handling relative imports within the module.
+
+    Args:
+        module_name: Name of the module to import (without .py extension)
+        module_path: Absolute path to the directory containing the module
+    """
+
+    @contextmanager
+    def temporary_sys_path(path):
+        """Temporarily add a path to sys.path"""
+        sys.path.insert(0, path)
+        try:
+            yield
+        finally:
+            if path in sys.path:
+                sys.path.remove(path)
+
+    # Generate a unique name for the module to avoid namespace conflicts
+    unique_module_name = f"{module_name}_{hash(module_path)}"
+
+    # Remove any existing module with the same name from sys.modules
+    for key in list(sys.modules.keys()):
+        if key == unique_module_name or key.startswith(f"{unique_module_name}."):
+            del sys.modules[key]
+
+    # Create the full path to the module file
+    full_path = os.path.join(module_path, f"{module_name}.py")
+
+    # Load the module specification
+    spec = importlib.util.spec_from_file_location(unique_module_name, full_path)
+    if spec is None:
+        raise ImportError(f"Could not load module specification from {full_path}")
+
+    # Create the module
+    module = importlib.util.module_from_spec(spec)
+
+    # Add the module path to sys.modules to handle relative imports
+    sys.modules[unique_module_name] = module
+
+    # Add the module's directory to sys.path temporarily and execute the module
+    with temporary_sys_path(module_path):
+        if spec.loader is None:
+            raise ImportError(f"Could not load module from {full_path}")
+        try:
+            spec.loader.exec_module(module)
+        except Exception as e:
+            # Clean up sys.modules in case of an error
+            if unique_module_name in sys.modules:
+                del sys.modules[unique_module_name]
+            raise e
+
+    return module
 
 
 def extract_tool_class_name(code: str) -> str:
@@ -281,16 +341,18 @@ def _prepare_virtual_env_for_tool_impl(
     try:
         if with_ == "uv":
             uv_venv_setup_command = [uv_bin, "venv", venv_dir]
-            subprocess.run(
+            out = subprocess.run(
                 uv_venv_setup_command,
                 check=True,
+                capture_output=True,
                 text=True,
             )
+            print(f"stdout for uv venv setup for tool {source_folder_path}: {out.stdout}")
+            print(f"stderr for uv venv setup for tool {source_folder_path}: {out.stderr}")
         else:
             venv.create(venv_dir, with_pip=True)
     except Exception as e:
         print(f"Error creating virtual environment for tool directory {source_folder_path}: {e.with_traceback()}")
-        raise RuntimeError(f"COULD NOT CREATE VENV: {e.with_traceback()}")
         return
 
     # Check for previous requirements file hash
@@ -309,8 +371,6 @@ def _prepare_virtual_env_for_tool_impl(
     # If the hash has changed, install the requirements
     try:
         if requirements_hash != previous_hash:
-            if os.path.exists(hash_file_path):
-                os.remove(hash_file_path)
             if with_ == "uv":
                 pip_install_command = [uv_bin, "pip", "install", "-r", requirements_file_path]
             else:
@@ -324,23 +384,25 @@ def _prepare_virtual_env_for_tool_impl(
                     "-r",
                     requirements_file_path,
                 ]
-            subprocess.run(
+            out = subprocess.run(
                 pip_install_command,
                 check=True,
+                capture_output=True,
                 text=True,
                 env={"VIRTUAL_ENV": venv_dir} if with_ == "uv" else None,
             )
+            print(f"stdout for pip install for tool {source_folder_path}: {out.stdout}")
+            print(f"stderr for pip install for tool {source_folder_path}: {out.stderr}")
 
             with open(hash_file_path, "w") as hash_file:
                 hash_file.write(requirements_hash)
     except subprocess.CalledProcessError as e:
         # We're not raising error as this will bring down the whole studio, as it's running in a thread
         print(f"Error installing venv requirements for tool directory {source_folder_path}: {e.with_traceback()}")
-        raise RuntimeError(f"COULD NOT INSTALL REQUIREMENTS: {e.with_traceback()}")
 
 
 def prepare_virtual_env_for_tool(source_folder_path: str, requirements_file_name: str):
-    return _prepare_virtual_env_for_tool_impl(source_folder_path, requirements_file_name, "uv")
+    return _prepare_virtual_env_for_tool_impl(source_folder_path, requirements_file_name, "venv")
 
 
 def get_venv_tool_output_key(code: str) -> Optional[str]:
@@ -456,73 +518,34 @@ def get_venv_tool(tool_instance: input_types.Input__ToolInstance, user_params_kv
         python_executable: str = get_venv_tool_python_executable(tool_instance)
         python_file: str = os.path.join(tool_instance.source_folder_path, tool_instance.python_code_file_name)
         name: str = tool_instance.name
-        description: str = ast.get_docstring(ast.parse(tool_code))
+        description: str = ""  # eventually tool_instance.description
         args_schema: Type[BaseModel] = get_venv_tool_tool_parameters_type(tool_code)
 
         def _run(self, *args, **kwargs):
             try:
-                cmd = [
-                    self.python_executable,
-                    self.python_file,
-                    "--user-params", json.dumps(dict(user_params)),
-                    "--tool-params", json.dumps(dict(kwargs)),
-                ]
                 result = subprocess.run(
-                    cmd,
+                    [
+                        self.python_executable,
+                        self.python_file,
+                        "--user-params",
+                        json.dumps(dict(user_params)),
+                        "--tool-params",
+                        json.dumps(dict(kwargs)),
+                    ],
                     capture_output=True,
                     text=True,
-                    check=False,
                 )
             except Exception as e:
                 return f"Tool call failed: {e}"
             if result.returncode != 0:
                 return f"Error: {result.stderr or 'No error details found'}"
-            if result.stdout:
-                output = str(result.stdout)
-                if self.output_key and self.output_key in output:
-                    output = output.split(self.output_key, 1)[-1].strip()
-                return output
             if result.stderr:
-                return f"stderr: {result.stderr or 'No error details found'}\n\n\nstdout: {result.stdout}"
-            return f"Error running tool - no output"
+                return f"Error: {result.stderr or 'No error details found'}"
+            output = str(result.stdout)
+            if self.output_key and self.output_key in output:
+                output = output.split(self.output_key, 1)[-1].strip()
+            return output
 
     tool = AgentStudioCrewAIVenvTool()
 
     return tool
-
-
-def is_venv_tool(tool_code: str) -> bool:
-    """
-    Checks to see whether a tool is a venv tool (V2 Tool) or not. This is determined
-    by the existence of ToolParameters at the upper level of the entrypoint
-    module for the tool. venv tools have ToolParameters at the root of the module,
-    whereas "V1" tools have ToolParameters defined nested in the StudioBaseTool.
-
-    NOTE: this is NOT a tool validation script. This is just a hueristic to determine
-    whether a tool is *probably* a valid V1 or V2 tool. We should put more time into
-    introspecting our tool code and revamping validate_tool_code() to handle V2 tools.
-    """
-
-    parsed_ast = ast.parse(tool_code)
-
-    # Search for ToolParameters class in the base node
-    for node in parsed_ast.body:
-        if isinstance(node, ast.ClassDef) and node.name == "ToolParameters":
-            return True
-    return False
-
-
-def get_crewai_tool(tool_instance: input_types.Input__ToolInstance, user_params_kv: Dict[str, str]) -> BaseTool:
-    """
-    Agent Studio currently supports two different tool template types - one which is a "V2" venv tool (multiple
-    files and packages, custom main entrypoint), and the "V1" tool (requires some class structure, only
-    single file tool, etc.). This method determines what tool type is running and then either loads the
-    V1 tool or the V2 tool.
-    """
-    relative_module_dir = os.path.abspath(tool_instance.source_folder_path)
-    with open(os.path.join(relative_module_dir, tool_instance.python_code_file_name), "r") as code_file:
-        tool_code = code_file.read()
-    if is_venv_tool(tool_code):
-        return get_venv_tool(tool_instance, user_params_kv)
-    else:
-        return get_tool_instance_proxy(tool_instance, user_params_kv)
